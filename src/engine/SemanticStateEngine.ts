@@ -85,6 +85,7 @@ export class SemanticStateEngine {
   private lastUpdatedAt: number;
   private lastDrift: number;
   private updateCount: number;
+  private readonly listeners = new Set<() => void>();
 
   constructor(config: SemanticStateEngineConfig) {
     this.alpha = config.alpha;
@@ -140,6 +141,16 @@ export class SemanticStateEngine {
 
     this.lastUpdatedAt = Date.now();
     this.updateCount++;
+    this.listeners.forEach((l) => l());
+  }
+
+  /**
+   * Subscribes to state changes. Returns an unsubscribe function.
+   * The listener is called after every successful `update`.
+   */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   /**
