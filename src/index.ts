@@ -12,3 +12,4 @@ export {
   type SemanticStateEngineOptions,
   type SemanticStateSnapshot,
 } from "./SemanticStateEngine.js";
+export { WorkerManager } from "./worker/WorkerManager.js";

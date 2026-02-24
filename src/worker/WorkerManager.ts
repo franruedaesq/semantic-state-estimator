@@ -20,10 +20,10 @@ export class WorkerManager {
   private isReady: boolean = false;
 
   constructor(
-    workerUrl: string | URL,
+    workerUrl: string | URL = new URL("./embedding.worker.js", import.meta.url),
     modelName: string = "Xenova/all-MiniLM-L6-v2",
   ) {
-    this.worker = new Worker(workerUrl);
+    this.worker = new Worker(workerUrl, { type: "module" });
     this.worker.onmessage = (event: MessageEvent<EmbeddingResponse | WorkerStatusEvent>) => {
       const data = event.data;
       if ('type' in data) {
