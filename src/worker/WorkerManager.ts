@@ -1,4 +1,4 @@
-import type { EmbeddingRequest, EmbeddingResponse, WorkerInitMessage } from "./types.js";
+import type { EmbeddingRequest, EmbeddingResponse, WorkerInitMessage, WorkerStatusEvent } from "./types.js";
 
 type PendingRequest = {
   resolve: (value: Float32Array) => void;
@@ -10,18 +10,32 @@ type PendingRequest = {
  *
  * It maintains a Map of pending Promises keyed by request UUID so that
  * out-of-order worker responses are still dispatched to the correct caller.
+ *
+ * Calls to `getEmbedding()` while the worker is not yet ready are dropped,
+ * which is acceptable for probabilistic semantic state and avoids memory leaks.
  */
 export class WorkerManager {
   private readonly worker: Worker;
   private readonly pendingRequests = new Map<string, PendingRequest>();
+  private isReady: boolean = false;
 
   constructor(
     workerUrl: string | URL,
     modelName: string = "Xenova/all-MiniLM-L6-v2",
   ) {
     this.worker = new Worker(workerUrl);
-    this.worker.onmessage = (event: MessageEvent<EmbeddingResponse>) => {
-      const { id, vector, error } = event.data;
+    this.worker.onmessage = (event: MessageEvent<EmbeddingResponse | WorkerStatusEvent>) => {
+      const data = event.data;
+      if ('type' in data) {
+        if (data.type === 'STATUS') {
+          this.isReady = data.status === 'ready';
+          return;
+        }
+        if (data.type === 'PROGRESS') {
+          return;
+        }
+      }
+      const { id, vector, error } = data as EmbeddingResponse;
       const pending = this.pendingRequests.get(id);
       if (!pending) return;
       this.pendingRequests.delete(id);
@@ -42,12 +56,16 @@ export class WorkerManager {
    * Sends `text` to the worker and returns a Promise that resolves with the
    * resulting embedding vector, or rejects if the worker reports an error.
    *
-   * NOTE: If the worker is terminated externally or never replies to a request,
-   * the corresponding entry in `pendingRequests` will not be cleaned up.
-   * A production implementation should add a per-request timeout to prevent
-   * unbounded memory growth.
+   * If the worker is not yet ready (model still loading), the request is dropped
+   * and the Promise rejects immediately to prevent unbounded memory growth.
+   *
+   * NOTE: A production implementation could instead queue requests and flush them
+   * once the worker signals `ready`.
    */
   getEmbedding(text: string): Promise<Float32Array> {
+    if (!this.isReady) {
+      return Promise.reject(new Error("Worker is not ready"));
+    }
     return new Promise<Float32Array>((resolve, reject) => {
       const id = crypto.randomUUID();
       this.pendingRequests.set(id, { resolve, reject });
