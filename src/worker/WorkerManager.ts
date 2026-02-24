@@ -1,4 +1,4 @@
-import type { EmbeddingRequest, EmbeddingResponse } from "./types.js";
+import type { EmbeddingRequest, EmbeddingResponse, WorkerInitMessage } from "./types.js";
 
 type PendingRequest = {
   resolve: (value: Float32Array) => void;
@@ -15,7 +15,10 @@ export class WorkerManager {
   private readonly worker: Worker;
   private readonly pendingRequests = new Map<string, PendingRequest>();
 
-  constructor(workerUrl: string | URL) {
+  constructor(
+    workerUrl: string | URL,
+    modelName: string = "Xenova/all-MiniLM-L6-v2",
+  ) {
     this.worker = new Worker(workerUrl);
     this.worker.onmessage = (event: MessageEvent<EmbeddingResponse>) => {
       const { id, vector, error } = event.data;
@@ -30,6 +33,9 @@ export class WorkerManager {
         pending.reject(new Error("Worker returned null vector without an error message"));
       }
     };
+
+    const initMessage: WorkerInitMessage = { type: "INIT", modelName };
+    this.worker.postMessage(initMessage);
   }
 
   /**
@@ -45,7 +51,7 @@ export class WorkerManager {
     return new Promise<Float32Array>((resolve, reject) => {
       const id = crypto.randomUUID();
       this.pendingRequests.set(id, { resolve, reject });
-      const request: EmbeddingRequest = { id, text };
+      const request: EmbeddingRequest = { type: "EMBED", id, text };
       this.worker.postMessage(request);
     });
   }

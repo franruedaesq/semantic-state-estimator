@@ -1,4 +1,19 @@
-import type { EmbeddingRequest, EmbeddingResponse } from "./types.js";
+import type { EmbeddingRequest, EmbeddingResponse, WorkerIncomingMessage, WorkerInitMessage } from "./types.js";
+
+let modelName: string = "Xenova/all-MiniLM-L6-v2";
+
+/** Returns the model name currently configured in the worker. */
+export function getModelName(): string {
+  return modelName;
+}
+
+/**
+ * Handles an INIT message, saving the model name to the worker's local state.
+ * This should be called exactly once, before any EMBED messages are processed.
+ */
+export function handleInitMessage(event: MessageEvent<WorkerInitMessage>): void {
+  modelName = event.data.modelName;
+}
 
 /**
  * Message handler for incoming EmbeddingRequests.
@@ -15,4 +30,11 @@ export function handleMessage(
   self.postMessage(response);
 }
 
-self.addEventListener("message", handleMessage as EventListener);
+self.addEventListener("message", (event: Event) => {
+  const msg = (event as MessageEvent<WorkerIncomingMessage>).data;
+  if (msg.type === "INIT") {
+    handleInitMessage(event as MessageEvent<WorkerInitMessage>);
+  } else {
+    handleMessage(event as MessageEvent<EmbeddingRequest>);
+  }
+});

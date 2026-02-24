@@ -28,6 +28,30 @@ function vec(values: number[]): number[] {
 }
 
 describe("SemanticStateEngine (engine/)", () => {
+  // ─── modelName configuration ─────────────────────────────────────────────────
+
+  describe("modelName", () => {
+    it("defaults to 'Xenova/all-MiniLM-L6-v2' when modelName is not provided", () => {
+      const wm = makeWorkerManager([vec([1, 0, 0, 0])]);
+      const engine = new SemanticStateEngine({
+        alpha: 0.5,
+        driftThreshold: 0.75,
+        workerManager: wm,
+      });
+      expect(engine.modelName).toBe("Xenova/all-MiniLM-L6-v2");
+    });
+
+    it("stores a custom modelName when provided", () => {
+      const wm = makeWorkerManager([vec([1, 0, 0, 0])]);
+      const engine = new SemanticStateEngine({
+        alpha: 0.5,
+        driftThreshold: 0.75,
+        workerManager: wm,
+        modelName: "Xenova/bge-small-en-v1.5",
+      });
+      expect(engine.modelName).toBe("Xenova/bge-small-en-v1.5");
+    });
+  });
   // ─── Integration with WorkerManager ─────────────────────────────────────────
 
   describe("WorkerManager integration", () => {

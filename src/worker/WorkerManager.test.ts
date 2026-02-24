@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { WorkerManager } from "./WorkerManager.js";
-import type { EmbeddingRequest, EmbeddingResponse } from "./types.js";
+import type { EmbeddingRequest, EmbeddingResponse, WorkerIncomingMessage } from "./types.js";
 
 // ─── Mock Worker helpers ──────────────────────────────────────────────────────
 
@@ -13,7 +13,8 @@ type MockWorkerInstance = {
 
 /**
  * Creates a mock Worker class whose postMessage immediately simulates a
- * successful worker response carrying `responseVector`.
+ * successful worker response carrying `responseVector` for EMBED requests.
+ * INIT messages are silently ignored (no response needed).
  */
 function makeResolvingWorkerClass(
   responseVector: Float32Array,
@@ -21,7 +22,8 @@ function makeResolvingWorkerClass(
   return vi.fn().mockImplementation(() => {
     const inst: MockWorkerInstance = {
       onmessage: null,
-      postMessage: vi.fn().mockImplementation((req: EmbeddingRequest) => {
+      postMessage: vi.fn().mockImplementation((req: WorkerIncomingMessage) => {
+        if (req.type !== "EMBED") return;
         setTimeout(() => {
           inst.onmessage?.({
             data: { id: req.id, vector: responseVector } satisfies EmbeddingResponse,
@@ -37,7 +39,7 @@ function makeResolvingWorkerClass(
 
 /**
  * Creates a mock Worker class whose postMessage immediately simulates an error
- * response carrying `errorMessage`.
+ * response carrying `errorMessage` for EMBED requests.
  */
 function makeRejectingWorkerClass(
   errorMessage: string,
@@ -45,7 +47,8 @@ function makeRejectingWorkerClass(
   return vi.fn().mockImplementation(() => {
     const inst: MockWorkerInstance = {
       onmessage: null,
-      postMessage: vi.fn().mockImplementation((req: EmbeddingRequest) => {
+      postMessage: vi.fn().mockImplementation((req: WorkerIncomingMessage) => {
+        if (req.type !== "EMBED") return;
         setTimeout(() => {
           inst.onmessage?.({
             data: {
@@ -88,6 +91,49 @@ describe("WorkerManager", () => {
     new WorkerManager("embedding.worker.js");
 
     expect(MockWorkerClass).toHaveBeenCalledTimes(1);
+  });
+
+  it("immediately posts an INIT message with the default modelName on construction", () => {
+    let workerInstance: MockWorkerInstance | null = null;
+    const MockWorkerClass = vi.fn().mockImplementation(() => {
+      workerInstance = {
+        onmessage: null,
+        postMessage: vi.fn(),
+        addEventListener: vi.fn(),
+        terminate: vi.fn(),
+      };
+      return workerInstance;
+    });
+    (globalThis as Record<string, unknown>).Worker = MockWorkerClass;
+
+    new WorkerManager("embedding.worker.js");
+
+    expect(workerInstance!.postMessage).toHaveBeenCalledTimes(1);
+    expect(workerInstance!.postMessage).toHaveBeenCalledWith({
+      type: "INIT",
+      modelName: "Xenova/all-MiniLM-L6-v2",
+    });
+  });
+
+  it("posts an INIT message with the provided modelName on construction", () => {
+    let workerInstance: MockWorkerInstance | null = null;
+    const MockWorkerClass = vi.fn().mockImplementation(() => {
+      workerInstance = {
+        onmessage: null,
+        postMessage: vi.fn(),
+        addEventListener: vi.fn(),
+        terminate: vi.fn(),
+      };
+      return workerInstance;
+    });
+    (globalThis as Record<string, unknown>).Worker = MockWorkerClass;
+
+    new WorkerManager("embedding.worker.js", "Xenova/bge-small-en-v1.5");
+
+    expect(workerInstance!.postMessage).toHaveBeenCalledWith({
+      type: "INIT",
+      modelName: "Xenova/bge-small-en-v1.5",
+    });
   });
 
   it("resolves getEmbedding with the Float32Array returned by the worker", async () => {
