@@ -36,6 +36,14 @@ export interface SemanticStateEngineConfig {
    * Must be provided when constructing the engine.
    */
   workerManager: WorkerManager;
+
+  /**
+   * The name of the embedding model to use.
+   * Must match the modelName passed to the WorkerManager so the worker
+   * loads the correct model.
+   * @default "Xenova/all-MiniLM-L6-v2"
+   */
+  modelName?: string;
 }
 
 /**
@@ -71,6 +79,7 @@ export class SemanticStateEngine {
     driftScore: number,
   ) => void;
   private readonly workerManager: WorkerManager;
+  readonly modelName: string;
 
   private stateVector: number[];
   private lastUpdatedAt: number;
@@ -82,6 +91,7 @@ export class SemanticStateEngine {
     this.driftThreshold = config.driftThreshold;
     this.onDriftDetected = config.onDriftDetected;
     this.workerManager = config.workerManager;
+    this.modelName = config.modelName ?? "Xenova/all-MiniLM-L6-v2";
 
     this.stateVector = [];
     this.lastUpdatedAt = Date.now();
