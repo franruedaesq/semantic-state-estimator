@@ -6,6 +6,7 @@
  */
 
 export { emaFusion, cosineSimilarity, normalize } from "./vectorMath.js";
+export { add, scale } from "./math/vector.js";
 export {
   SemanticStateEngine,
   type SemanticStateEngineOptions,
