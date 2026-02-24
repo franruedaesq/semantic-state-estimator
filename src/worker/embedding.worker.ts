@@ -1,33 +1,68 @@
+import { pipeline, env } from "@huggingface/transformers";
 import type { EmbeddingRequest, EmbeddingResponse, WorkerIncomingMessage, WorkerInitMessage } from "./types.js";
 
-let modelName: string = "Xenova/all-MiniLM-L6-v2";
+// Disable local models; always load from the HuggingFace Hub.
+env.allowLocalModels = false;
+
+export class PipelineSingleton {
+  static instance: Promise<any> | null = null;
+  static modelName: string | null = null;
+
+  static async getInstance(modelName: string, progressCallback?: (data: any) => void) {
+    if (this.instance === null || this.modelName !== modelName) {
+      this.modelName = modelName;
+      this.instance = pipeline('feature-extraction', modelName, {
+        dtype: 'q8',
+        progress_callback: progressCallback,
+      });
+    }
+    return this.instance;
+  }
+}
+
+let currentModelName: string = "Xenova/all-MiniLM-L6-v2";
 
 /** Returns the model name currently configured in the worker. */
 export function getModelName(): string {
-  return modelName;
+  return currentModelName;
 }
 
 /**
- * Handles an INIT message, saving the model name to the worker's local state.
- * This should be called exactly once, before any EMBED messages are processed.
+ * Handles an INIT message: saves the model name and starts loading the pipeline,
+ * broadcasting STATUS events so the main thread can track the model lifecycle.
  */
-export function handleInitMessage(event: MessageEvent<WorkerInitMessage>): void {
-  modelName = event.data.modelName;
+export async function handleInitMessage(event: MessageEvent<WorkerInitMessage>): Promise<void> {
+  currentModelName = event.data.modelName;
+  self.postMessage({ type: 'STATUS', status: 'loading' });
+  try {
+    await PipelineSingleton.getInstance(currentModelName, (data: any) => {
+      if (data.status === 'progress' && data.file && data.progress !== undefined) {
+        self.postMessage({ type: 'PROGRESS', file: data.file, progress: data.progress });
+      }
+    });
+    self.postMessage({ type: 'STATUS', status: 'ready' });
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    self.postMessage({ type: 'STATUS', status: 'failed', error });
+  }
 }
 
 /**
- * Message handler for incoming EmbeddingRequests.
- *
- * Exported so the handler can be unit-tested without module-level mocking.
- * Until the ONNX model is wired up (Phase 5), returns a dummy 384-dim vector.
+ * Handles an EMBED message: runs the text through the pipeline and posts back
+ * the resulting normalized 1D Float32Array.
  */
-export function handleMessage(
-  event: MessageEvent<EmbeddingRequest>,
-): void {
-  const { id } = event.data;
-  const vector = new Float32Array(384).fill(0.1);
-  const response: EmbeddingResponse = { id, vector };
-  self.postMessage(response);
+export async function handleMessage(event: MessageEvent<EmbeddingRequest>): Promise<void> {
+  const { id, text } = event.data;
+  try {
+    const extractor = await PipelineSingleton.getInstance(currentModelName);
+    const output = await extractor(text, { pooling: 'mean', normalize: true });
+    const response: EmbeddingResponse = { id, vector: output.data as Float32Array };
+    self.postMessage(response);
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    const response: EmbeddingResponse = { id, vector: null, error };
+    self.postMessage(response);
+  }
 }
 
 self.addEventListener("message", (event: Event) => {

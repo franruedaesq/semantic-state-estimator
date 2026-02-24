@@ -33,8 +33,6 @@ export interface EmbeddingResponse {
 }
 
 /** Status events broadcast by the worker so the UI can reflect model state. */
-export type WorkerStatus = "loading" | "ready" | "failed";
-
-export interface WorkerStatusEvent {
-  status: WorkerStatus;
-}
+export type WorkerStatusEvent =
+  | { type: 'STATUS'; status: 'loading' | 'ready' | 'failed'; error?: string }
+  | { type: 'PROGRESS'; file: string; progress: number };
