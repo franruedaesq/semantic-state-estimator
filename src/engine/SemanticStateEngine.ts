@@ -1,4 +1,5 @@
 import { emaFusion, cosineSimilarity } from "../vectorMath.js";
+import type { WorkerManager } from "../worker/WorkerManager.js";
 
 /**
  * Age-based health decay rate: health lost per millisecond of inactivity.
@@ -30,6 +31,11 @@ export interface SemanticStateEngineConfig {
    * @param driftScore Drift magnitude: 1 − cosine_similarity ∈ [0, 2].
    */
   onDriftDetected?: (vector: number[], driftScore: number) => void;
+  /**
+   * The WorkerManager used to asynchronously obtain embedding vectors.
+   * Must be provided when constructing the engine.
+   */
+  workerManager: WorkerManager;
 }
 
 /**
@@ -64,6 +70,7 @@ export class SemanticStateEngine {
     vector: number[],
     driftScore: number,
   ) => void;
+  private readonly workerManager: WorkerManager;
 
   private stateVector: number[];
   private lastUpdatedAt: number;
@@ -74,6 +81,7 @@ export class SemanticStateEngine {
     this.alpha = config.alpha;
     this.driftThreshold = config.driftThreshold;
     this.onDriftDetected = config.onDriftDetected;
+    this.workerManager = config.workerManager;
 
     this.stateVector = [];
     this.lastUpdatedAt = Date.now();
@@ -82,7 +90,8 @@ export class SemanticStateEngine {
   }
 
   /**
-   * Fuses a new embedding into the rolling semantic state using EMA.
+   * Obtains an embedding for `text` from the WorkerManager and fuses it into
+   * the rolling semantic state using EMA.
    *
    * On the first call the embedding establishes the baseline.
    * On subsequent calls, if the cosine similarity between the current state
@@ -90,9 +99,12 @@ export class SemanticStateEngine {
    * the {@link SemanticStateEngineConfig.onDriftDetected} callback is fired
    * *before* the EMA fusion is applied.
    *
-   * @param embedding The new embedding vector E_t.
+   * @param text Raw text whose embedding will be fused into the state.
    */
-  update(embedding: number[]): void {
+  async update(text: string): Promise<void> {
+    const float32 = await this.workerManager.getEmbedding(text);
+    const embedding = Array.from(float32);
+
     if (this.updateCount === 0) {
       // First call: establish baseline from a zero-vector origin.
       const zero = new Array(embedding.length).fill(0) as number[];
