@@ -1,0 +1,16 @@
+# Source & tests — only dist/ is needed by consumers
+src/
+
+# Build & tooling config
+tsup.config.ts
+vitest.config.ts
+vitest.setup.ts
+tsconfig.json
+
+# Scripts (not needed by consumers)
+scripts/
+
+# Development artifacts
+.git/
+.gitignore
+package-lock.json

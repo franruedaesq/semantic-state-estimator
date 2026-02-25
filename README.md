@@ -1,5 +1,9 @@
 # semantic-state-estimator
 
+[![npm version](https://img.shields.io/npm/v/semantic-state-estimator?style=flat-square)](https://www.npmjs.com/package/semantic-state-estimator)
+[![license](https://img.shields.io/npm/l/semantic-state-estimator?style=flat-square)](LICENSE)
+[![node](https://img.shields.io/node/v/semantic-state-estimator?style=flat-square)](https://nodejs.org)
+
 **Bridge the gap between boolean UI state and semantic AI intent — all inside a WebWorker, on-device, zero-latency.**  
 Instead of asking *"did the user click?"*, this library asks *"what does the user **mean**?"* — fusing local text embeddings with Exponential Moving Average (EMA) to build a living, drifting semantic context of your entire session.
 

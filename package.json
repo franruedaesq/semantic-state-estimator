@@ -24,14 +24,17 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
-    "prepublishOnly": "npm run lint && npm run test && npm run build"
+    "prepublishOnly": "npm run lint && npm run test && npm run build",
+    "release": "bash scripts/publish.sh"
   },
   "keywords": [
     "semantic",
@@ -42,13 +45,28 @@
     "onnx",
     "typescript"
   ],
-  "author": "",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "Francisco Rueda",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/franruedaesq/semantic-state-estimator.git"
+  },
+  "homepage": "https://github.com/franruedaesq/semantic-state-estimator#readme",
+  "bugs": {
+    "url": "https://github.com/franruedaesq/semantic-state-estimator/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "jsdom": "^28.1.0",
+    "jsdom": "^26.1.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.2",
     "vitest": "^3.0.8"
@@ -57,8 +75,19 @@
     "@huggingface/transformers": "^3.8.1"
   },
   "peerDependencies": {
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "zustand": "^5.0.11"
+    "react": ">=18",
+    "react-dom": ">=18",
+    "zustand": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "zustand": {
+      "optional": true
+    }
   }
 }
