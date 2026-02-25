@@ -1,5 +1,14 @@
 import { emaFusion, cosineSimilarity } from "../math/vector.js";
-import type { WorkerManager } from "../worker/WorkerManager.js";
+
+/**
+ * A generic embedding provider contract.
+ * Any object that can return an embedding vector for a given text satisfies this interface.
+ * This includes `WorkerManager` (on-device WebWorker) as well as custom OpenAI, Ollama,
+ * or other remote-inference wrappers.
+ */
+export interface EmbeddingProvider {
+  getEmbedding(text: string): Promise<Float32Array | number[]>;
+}
 
 /**
  * Age-based health decay rate: health lost per millisecond of inactivity.
@@ -32,10 +41,11 @@ export interface SemanticStateEngineConfig {
    */
   onDriftDetected?: (vector: number[], driftScore: number) => void;
   /**
-   * The WorkerManager used to asynchronously obtain embedding vectors.
-   * Must be provided when constructing the engine.
+   * The embedding provider used to obtain embedding vectors asynchronously.
+   * Any object implementing `getEmbedding(text: string): Promise<Float32Array | number[]>`
+   * satisfies this interface — including `WorkerManager`, or a custom OpenAI / Ollama wrapper.
    */
-  workerManager: WorkerManager;
+  provider: EmbeddingProvider;
 
   /**
    * The name of the embedding model to use.
@@ -78,7 +88,7 @@ export class SemanticStateEngine {
     vector: number[],
     driftScore: number,
   ) => void;
-  private readonly workerManager: WorkerManager;
+  private readonly provider: EmbeddingProvider;
   readonly modelName: string;
 
   private stateVector: number[];
@@ -91,7 +101,7 @@ export class SemanticStateEngine {
     this.alpha = config.alpha;
     this.driftThreshold = config.driftThreshold;
     this.onDriftDetected = config.onDriftDetected;
-    this.workerManager = config.workerManager;
+    this.provider = config.provider;
     this.modelName = config.modelName ?? "Xenova/all-MiniLM-L6-v2";
 
     this.stateVector = [];
@@ -113,11 +123,11 @@ export class SemanticStateEngine {
    * @param text Raw text whose embedding will be fused into the state.
    */
   async update(text: string): Promise<void> {
-    const float32 = await this.workerManager.getEmbedding(text);
-    if (float32 === null) {
+    const raw = await this.provider.getEmbedding(text);
+    if (raw === null) {
       return;
     }
-    const embedding = Array.from(float32);
+    const embedding = Array.from(raw);
 
     if (this.updateCount === 0) {
       // First call: establish baseline from a zero-vector origin.
