@@ -11,8 +11,9 @@ type PendingRequest = {
  * It maintains a Map of pending Promises keyed by request UUID so that
  * out-of-order worker responses are still dispatched to the correct caller.
  *
- * Calls to `getEmbedding()` while the worker is not yet ready are dropped,
- * which is acceptable for probabilistic semantic state and avoids memory leaks.
+ * Calls to `getEmbedding()` while the worker is not yet ready are silently
+ * dropped (returning null) to avoid unhandled promise rejections during the
+ * model loading phase, which is acceptable for probabilistic semantic state.
  */
 export class WorkerManager {
   private readonly worker: Worker;
@@ -26,25 +27,26 @@ export class WorkerManager {
     this.worker = new Worker(workerUrl, { type: "module" });
     this.worker.onmessage = (event: MessageEvent<EmbeddingResponse | WorkerStatusEvent>) => {
       const data = event.data;
-      if ('type' in data) {
-        if (data.type === 'STATUS') {
+      switch (data.type) {
+        case 'STATUS':
           this.isReady = data.status === 'ready';
           return;
-        }
-        if (data.type === 'PROGRESS') {
+        case 'PROGRESS':
+          return;
+        case 'EMBED_RES': {
+          const { id, vector, error } = data;
+          const pending = this.pendingRequests.get(id);
+          if (!pending) return;
+          this.pendingRequests.delete(id);
+          if (error !== undefined) {
+            pending.reject(new Error(error));
+          } else if (vector !== null) {
+            pending.resolve(vector);
+          } else {
+            pending.reject(new Error("Worker returned null vector without an error message"));
+          }
           return;
         }
-      }
-      const { id, vector, error } = data as EmbeddingResponse;
-      const pending = this.pendingRequests.get(id);
-      if (!pending) return;
-      this.pendingRequests.delete(id);
-      if (error !== undefined) {
-        pending.reject(new Error(error));
-      } else if (vector !== null) {
-        pending.resolve(vector);
-      } else {
-        pending.reject(new Error("Worker returned null vector without an error message"));
       }
     };
 
@@ -56,15 +58,14 @@ export class WorkerManager {
    * Sends `text` to the worker and returns a Promise that resolves with the
    * resulting embedding vector, or rejects if the worker reports an error.
    *
-   * If the worker is not yet ready (model still loading), the request is dropped
-   * and the Promise rejects immediately to prevent unbounded memory growth.
-   *
-   * NOTE: A production implementation could instead queue requests and flush them
-   * once the worker signals `ready`.
+   * If the worker is not yet ready (model still loading), the request is
+   * silently dropped and the Promise resolves with `null` to avoid
+   * unhandled promise rejections during the initial page load.
    */
-  getEmbedding(text: string): Promise<Float32Array> {
+  getEmbedding(text: string): Promise<Float32Array | null> {
     if (!this.isReady) {
-      return Promise.reject(new Error("Worker is not ready"));
+      console.warn("SemanticStateEngine: Worker still loading, dropping early event.");
+      return Promise.resolve(null);
     }
     return new Promise<Float32Array>((resolve, reject) => {
       const id = crypto.randomUUID();

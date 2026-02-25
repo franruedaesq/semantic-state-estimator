@@ -1,4 +1,4 @@
-import { emaFusion, cosineSimilarity } from "../vectorMath.js";
+import { emaFusion, cosineSimilarity } from "../math/vector.js";
 import type { WorkerManager } from "../worker/WorkerManager.js";
 
 /**
@@ -114,6 +114,9 @@ export class SemanticStateEngine {
    */
   async update(text: string): Promise<void> {
     const float32 = await this.workerManager.getEmbedding(text);
+    if (float32 === null) {
+      return;
+    }
     const embedding = Array.from(float32);
 
     if (this.updateCount === 0) {

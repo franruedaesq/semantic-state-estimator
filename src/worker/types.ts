@@ -24,6 +24,7 @@ export type WorkerIncomingMessage = WorkerInitMessage | EmbeddingRequest;
 
 /** A response sent from the embedding worker back to the main thread. */
 export interface EmbeddingResponse {
+  type: "EMBED_RES";
   /** UUID matching the originating {@link EmbeddingRequest}. */
   id: string;
   /** The computed embedding vector, or null when an error occurred. */

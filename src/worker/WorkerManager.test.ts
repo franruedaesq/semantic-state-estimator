@@ -32,7 +32,7 @@ function makeResolvingWorkerClass(
         if (req.type !== "EMBED") return;
         setTimeout(() => {
           inst.onmessage?.({
-            data: { id: req.id, vector: responseVector } satisfies EmbeddingResponse,
+            data: { type: 'EMBED_RES', id: req.id, vector: responseVector } satisfies EmbeddingResponse,
           });
         }, 0);
       }),
@@ -65,6 +65,7 @@ function makeRejectingWorkerClass(
         setTimeout(() => {
           inst.onmessage?.({
             data: {
+              type: 'EMBED_RES',
               id: req.id,
               vector: null,
               error: errorMessage,
@@ -162,7 +163,7 @@ describe("WorkerManager", () => {
 
     expect(result).toBeInstanceOf(Float32Array);
     expect(result).toHaveLength(384);
-    expect(result[0]).toBeCloseTo(0.1);
+    expect((result as Float32Array)[0]).toBeCloseTo(0.1);
   });
 
   it("rejects getEmbedding when the worker replies with an error", async () => {
@@ -178,7 +179,7 @@ describe("WorkerManager", () => {
     );
   });
 
-  it("rejects getEmbedding immediately when the worker is not yet ready", async () => {
+  it("resolves getEmbedding with null when the worker is not yet ready", async () => {
     const MockWorkerClass = vi.fn().mockImplementation(() => ({
       onmessage: null,
       postMessage: vi.fn(),
@@ -190,7 +191,7 @@ describe("WorkerManager", () => {
     const manager = new WorkerManager("embedding.worker.js");
     // Do NOT wait – worker has not sent STATUS ready yet
 
-    await expect(manager.getEmbedding("early call")).rejects.toThrow("Worker is not ready");
+    await expect(manager.getEmbedding("early call")).resolves.toBeNull();
   });
 
   it("becomes ready after receiving STATUS ready from the worker", async () => {
@@ -199,8 +200,8 @@ describe("WorkerManager", () => {
       makeResolvingWorkerClass(vector);
 
     const manager = new WorkerManager("embedding.worker.js");
-    // Before STATUS ready arrives, requests should be rejected
-    await expect(manager.getEmbedding("too early")).rejects.toThrow("Worker is not ready");
+    // Before STATUS ready arrives, requests should resolve with null
+    await expect(manager.getEmbedding("too early")).resolves.toBeNull();
 
     // Wait for STATUS ready
     await new Promise((r) => setTimeout(r, 10));
