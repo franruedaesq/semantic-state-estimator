@@ -1,4 +1,5 @@
 import type { EmbeddingRequest, EmbeddingResponse, WorkerInitMessage, WorkerStatusEvent } from "./types.js";
+import { workerCode } from "./workerCode.js";
 
 type PendingRequest = {
   resolve: (value: Float32Array) => void;
@@ -6,10 +7,30 @@ type PendingRequest = {
 };
 
 /**
+ * Creates a Blob URL from the inlined worker bundle string.
+ *
+ * This avoids the Vite dev-mode bug where `new URL('./embedding.worker.js',
+ * import.meta.url)` resolves relative to `.vite/deps/` when the library is
+ * consumed from node_modules, producing a 404.
+ *
+ * The blob is self-contained — all dependencies were bundled in at build time
+ * by the Phase-1 tsup config — so it works without any external imports.
+ */
+function createBlobWorkerUrl(): string {
+  const blob = new Blob([workerCode], { type: "text/javascript" });
+  return URL.createObjectURL(blob);
+}
+
+/**
  * WorkerManager wraps a browser Worker in a clean async/await API.
  *
  * It maintains a Map of pending Promises keyed by request UUID so that
  * out-of-order worker responses are still dispatched to the correct caller.
+ *
+ * By default the worker is created from an inlined Blob URL, which is fully
+ * portable across bundlers and does not rely on `import.meta.url` path
+ * resolution. Pass an explicit `workerUrl` to override (e.g. for testing or
+ * advanced use cases).
  *
  * Calls to `getEmbedding()` while the worker is not yet ready are silently
  * dropped (returning null) to avoid unhandled promise rejections during the
@@ -21,10 +42,21 @@ export class WorkerManager {
   private isReady: boolean = false;
 
   constructor(
-    workerUrl: string | URL = new URL("./embedding.worker.js", import.meta.url),
+    workerUrl?: string | URL,
     modelName: string = "Xenova/all-MiniLM-L6-v2",
   ) {
-    this.worker = new Worker(workerUrl, { type: "module" });
+    const url = workerUrl ?? createBlobWorkerUrl();
+    this.worker = new Worker(url, { type: "module" });
+
+    this.worker.onerror = (event: ErrorEvent) => {
+      console.error(
+        "SemanticStateEstimator: worker encountered a fatal error — " +
+        "embeddings will be unavailable.",
+        event,
+      );
+      this.isReady = false;
+    };
+
     this.worker.onmessage = (event: MessageEvent<EmbeddingResponse | WorkerStatusEvent>) => {
       const data = event.data;
       switch (data.type) {

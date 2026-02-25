@@ -210,4 +210,65 @@ describe("WorkerManager", () => {
     const result = await manager.getEmbedding("after ready");
     expect(result).toBeInstanceOf(Float32Array);
   });
+
+  it("creates a Blob URL worker when no workerUrl is provided", () => {
+    // The workerCode stub exports an empty string, so the Blob will contain "".
+    // We only care that createObjectURL was called with a Blob.
+    const fakeUrl = "blob:http://localhost/fake-worker-id";
+    const createObjectURLSpy = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue(fakeUrl);
+
+    const MockWorkerClass = vi.fn().mockImplementation(() => ({
+      onmessage: null,
+      onerror: null,
+      postMessage: vi.fn(),
+      addEventListener: vi.fn(),
+      terminate: vi.fn(),
+    }));
+    (globalThis as Record<string, unknown>).Worker = MockWorkerClass;
+
+    new WorkerManager(); // no URL argument
+
+    expect(createObjectURLSpy).toHaveBeenCalledTimes(1);
+    expect(createObjectURLSpy).toHaveBeenCalledWith(expect.any(Blob));
+    expect(MockWorkerClass).toHaveBeenCalledWith(fakeUrl, { type: "module" });
+
+    createObjectURLSpy.mockRestore();
+  });
+
+  it("wires onerror and logs to console.error on worker error", () => {
+    let workerInstance: {
+      onmessage: ((e: { data: EmbeddingResponse | WorkerStatusEvent }) => void) | null;
+      onerror: ((e: ErrorEvent) => void) | null;
+      postMessage: ReturnType<typeof vi.fn>;
+      addEventListener: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    } | null = null;
+
+    const MockWorkerClass = vi.fn().mockImplementation(() => {
+      workerInstance = {
+        onmessage: null,
+        onerror: null,
+        postMessage: vi.fn(),
+        addEventListener: vi.fn(),
+        terminate: vi.fn(),
+      };
+      return workerInstance;
+    });
+    (globalThis as Record<string, unknown>).Worker = MockWorkerClass;
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => { });
+
+    new WorkerManager("embedding.worker.js");
+
+    // Simulate a worker error (ErrorEvent is not available in jsdom/Node)
+    const fakeErrorEvent = { type: "error", message: "script failed" } as unknown as ErrorEvent;
+    workerInstance!.onerror!(fakeErrorEvent);
+
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    expect(consoleSpy.mock.calls[0][0]).toContain("fatal error");
+
+    consoleSpy.mockRestore();
+  });
 })
