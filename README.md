@@ -24,7 +24,7 @@ import { WorkerManager, SemanticStateEngine } from 'semantic-state-estimator';
 const workerManager = new WorkerManager();
 
 const engine = new SemanticStateEngine({
-  workerManager,
+  provider: workerManager,
   alpha: 0.5,           // Balanced EMA decay — see "Tuning the Math" below
   driftThreshold: 0.75, // Fire onDriftDetected when similarity drops below this
   onDriftDetected: (vector, driftScore) => {
@@ -55,7 +55,7 @@ type AppState = {
 };
 
 const workerManager = new WorkerManager();
-const engine = new SemanticStateEngine({ workerManager, alpha: 0.5, driftThreshold: 0.75 });
+const engine = new SemanticStateEngine({ provider: workerManager, alpha: 0.5, driftThreshold: 0.75 });
 
 // Wrap your store creator with semanticMiddleware
 export const useAppStore = create<AppState>(
@@ -107,7 +107,7 @@ The `onDriftDetected` callback fires **before** EMA fusion is applied, giving yo
 
 ```typescript
 const engine = new SemanticStateEngine({
-  workerManager,
+  provider: workerManager,
   alpha: 0.5,
   driftThreshold: 0.75,
   onDriftDetected: (vector, driftScore) => {
@@ -164,7 +164,7 @@ function SemanticStatusBanner({ engine }) {
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `workerManager` | `WorkerManager` | *(required)* | Provides async embedding vectors |
+| `provider` | `EmbeddingProvider` | *(required)* | Provides async embedding vectors. `WorkerManager` satisfies this interface out of the box; you can also pass a custom OpenAI, Ollama, or any other wrapper. |
 | `alpha` | `number` | — | EMA decay factor α ∈ (0, 1] |
 | `driftThreshold` | `number` | — | Cosine similarity below which drift fires |
 | `onDriftDetected` | `(vector, driftScore) => void` | `undefined` | Callback on semantic drift |
@@ -180,6 +180,79 @@ function SemanticStatusBanner({ engine }) {
   semanticSummary: string;  // "stable" | "drifting" | "volatile"
 }
 ```
+
+---
+
+## Custom Embedding Providers
+
+The `SemanticStateEngine` accepts any object that implements the `EmbeddingProvider` interface:
+
+```typescript
+import type { EmbeddingProvider } from 'semantic-state-estimator';
+
+interface EmbeddingProvider {
+  getEmbedding(text: string): Promise<Float32Array | number[]>;
+}
+```
+
+`WorkerManager` satisfies this interface automatically, so existing code continues to work. You can also write a thin wrapper to use any other embedding source:
+
+### OpenAI Provider
+
+```typescript
+import type { EmbeddingProvider } from 'semantic-state-estimator';
+
+class OpenAIProvider implements EmbeddingProvider {
+  constructor(private apiKey: string, private model = "text-embedding-3-small") {}
+
+  async getEmbedding(text: string): Promise<number[]> {
+    const res = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({ input: text, model: this.model })
+    });
+    const data = await res.json();
+    return data.data[0].embedding; // 1536-dimension array
+  }
+}
+
+const engine = new SemanticStateEngine({
+  alpha: 0.5,
+  driftThreshold: 0.75,
+  provider: new OpenAIProvider("sk-..."),
+});
+```
+
+### Ollama Provider
+
+```typescript
+import type { EmbeddingProvider } from 'semantic-state-estimator';
+
+class OllamaProvider implements EmbeddingProvider {
+  constructor(private model = "nomic-embed-text", private url = "http://localhost:11434") {}
+
+  async getEmbedding(text: string): Promise<number[]> {
+    const res = await fetch(`${this.url}/api/embeddings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: this.model, prompt: text })
+    });
+    const data = await res.json();
+    return data.embedding; // 768-dimension array
+  }
+}
+
+const engine = new SemanticStateEngine({
+  alpha: 0.5,
+  driftThreshold: 0.75,
+  provider: new OllamaProvider(),
+});
+```
+
+> ⚠️ **Frontend / high-frequency usage warning:** The built-in `WorkerManager` runs inference locally in the browser in ~20–50 ms. If you replace it with a remote provider such as `OpenAIProvider`, every `engine.update()` call incurs a 300 ms–800 ms network round-trip. When used with `semanticMiddleware` on rapid UI state changes, requests will queue up and you may hit API rate limits quickly. Remote providers are best suited for server-side or local-desktop applications where update frequency is low.
 
 ---
 

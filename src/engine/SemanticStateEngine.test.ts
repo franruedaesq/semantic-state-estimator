@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SemanticStateEngine } from "./SemanticStateEngine.js";
-import type { WorkerManager } from "../worker/WorkerManager.js";
+import type { EmbeddingProvider } from "./SemanticStateEngine.js";
 
 const DIM = 4;
 
 /**
- * Builds a minimal WorkerManager mock that returns each vector in `vectors`
+ * Builds a minimal EmbeddingProvider mock that returns each vector in `vectors`
  * (cycling) as a Float32Array on successive `getEmbedding` calls.
  */
-function makeWorkerManager(vectors: number[][]): WorkerManager {
+function makeProvider(vectors: number[][]): EmbeddingProvider {
   let callCount = 0;
   return {
     getEmbedding: vi.fn().mockImplementation(() => {
@@ -16,7 +16,7 @@ function makeWorkerManager(vectors: number[][]): WorkerManager {
       callCount++;
       return Promise.resolve(new Float32Array(vec));
     }),
-  } as unknown as WorkerManager;
+  } as unknown as EmbeddingProvider;
 }
 
 function vec(values: number[]): number[] {
@@ -32,35 +32,35 @@ describe("SemanticStateEngine (engine/)", () => {
 
   describe("modelName", () => {
     it("defaults to 'Xenova/all-MiniLM-L6-v2' when modelName is not provided", () => {
-      const wm = makeWorkerManager([vec([1, 0, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
-        workerManager: wm,
+        provider: wm,
       });
       expect(engine.modelName).toBe("Xenova/all-MiniLM-L6-v2");
     });
 
     it("stores a custom modelName when provided", () => {
-      const wm = makeWorkerManager([vec([1, 0, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
-        workerManager: wm,
+        provider: wm,
         modelName: "Xenova/bge-small-en-v1.5",
       });
       expect(engine.modelName).toBe("Xenova/bge-small-en-v1.5");
     });
   });
-  // ─── Integration with WorkerManager ─────────────────────────────────────────
+  // ─── Integration with EmbeddingProvider ──────────────────────────────────────
 
-  describe("WorkerManager integration", () => {
-    it("calls workerManager.getEmbedding with the supplied text", async () => {
-      const wm = makeWorkerManager([vec([1, 0, 0, 0])]);
+  describe("EmbeddingProvider integration", () => {
+    it("calls provider.getEmbedding with the supplied text", async () => {
+      const wm = makeProvider([vec([1, 0, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
-        workerManager: wm,
+        provider: wm,
       });
 
       await engine.update("some UI event");
@@ -72,11 +72,11 @@ describe("SemanticStateEngine (engine/)", () => {
     it("applies EMA fusion after the worker resolves", async () => {
       // S_0 = [0,0,0,0], E_1 = [1,0,0,0], α = 0.5
       // S_1 = 0.5*[1,0,0,0] + 0.5*[0,0,0,0] = [0.5, 0, 0, 0]
-      const wm = makeWorkerManager([vec([1, 0, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
-        workerManager: wm,
+        provider: wm,
       });
 
       await engine.update("first event");
@@ -88,12 +88,12 @@ describe("SemanticStateEngine (engine/)", () => {
 
     it("triggers onDriftDetected when the embedding drifts beyond the threshold", async () => {
       const onDriftDetected = vi.fn();
-      const wm = makeWorkerManager([vec([1, 0, 0, 0]), vec([0, 1, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0]), vec([0, 1, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
         onDriftDetected,
-        workerManager: wm,
+        provider: wm,
       });
 
       await engine.update("first event");
@@ -106,11 +106,11 @@ describe("SemanticStateEngine (engine/)", () => {
 
     it("updates healthScore after resolving the embedding", async () => {
       vi.useFakeTimers();
-      const wm = makeWorkerManager([vec([1, 0, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
-        workerManager: wm,
+        provider: wm,
       });
 
       await engine.update("event");
@@ -126,12 +126,12 @@ describe("SemanticStateEngine (engine/)", () => {
   describe("onDriftDetected callback", () => {
     it("fires when cosine similarity drops below driftThreshold", async () => {
       const onDriftDetected = vi.fn();
-      const wm = makeWorkerManager([vec([1, 0, 0, 0]), vec([0, 1, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0]), vec([0, 1, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
         onDriftDetected,
-        workerManager: wm,
+        provider: wm,
       });
 
       await engine.update("first");
@@ -147,12 +147,12 @@ describe("SemanticStateEngine (engine/)", () => {
 
     it("does NOT fire when cosine similarity stays above driftThreshold", async () => {
       const onDriftDetected = vi.fn();
-      const wm = makeWorkerManager([vec([1, 0, 0, 0]), vec([1, 0, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0]), vec([1, 0, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
         onDriftDetected,
-        workerManager: wm,
+        provider: wm,
       });
 
       await engine.update("first");
@@ -162,12 +162,12 @@ describe("SemanticStateEngine (engine/)", () => {
 
     it("passes the drift score as a number to the callback", async () => {
       const onDriftDetected = vi.fn();
-      const wm = makeWorkerManager([vec([1, 0, 0, 0]), vec([0, 1, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0]), vec([0, 1, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
         onDriftDetected,
-        workerManager: wm,
+        provider: wm,
       });
 
       await engine.update("first");
@@ -192,11 +192,11 @@ describe("SemanticStateEngine (engine/)", () => {
 
     it("starts at 1.0 immediately after the first update", async () => {
       vi.useFakeTimers();
-      const wm = makeWorkerManager([vec([1, 0, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
-        workerManager: wm,
+        provider: wm,
       });
       await engine.update("event");
       const { healthScore } = engine.getSnapshot();
@@ -205,11 +205,11 @@ describe("SemanticStateEngine (engine/)", () => {
 
     it("decays with age: healthScore decreases as time advances", async () => {
       vi.useFakeTimers();
-      const wm = makeWorkerManager([vec([1, 0, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
-        workerManager: wm,
+        provider: wm,
       });
       await engine.update("event");
       const { healthScore: before } = engine.getSnapshot();
@@ -221,11 +221,11 @@ describe("SemanticStateEngine (engine/)", () => {
     });
 
     it("drops with volatility: rapidly shifting vectors lower healthScore", async () => {
-      const wm = makeWorkerManager([vec([1, 0, 0, 0]), vec([0, 1, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0]), vec([0, 1, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
-        workerManager: wm,
+        provider: wm,
       });
       await engine.update("first");
       const { healthScore: stable } = engine.getSnapshot();
@@ -238,11 +238,11 @@ describe("SemanticStateEngine (engine/)", () => {
 
     it("is clamped to [0, 1]", async () => {
       vi.useFakeTimers();
-      const wm = makeWorkerManager([vec([1, 0, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
-        workerManager: wm,
+        provider: wm,
       });
       await engine.update("event");
 
@@ -260,7 +260,7 @@ describe("SemanticStateEngine (engine/)", () => {
     let engine: SemanticStateEngine;
 
     beforeEach(() => {
-      const wm = makeWorkerManager([
+      const wm = makeProvider([
         vec([1, 0, 0, 0]),
         vec([0, 1, 0, 0]),
         vec([1, 2, 3, 4]),
@@ -268,7 +268,7 @@ describe("SemanticStateEngine (engine/)", () => {
       engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
-        workerManager: wm,
+        provider: wm,
       });
     });
 
@@ -304,11 +304,11 @@ describe("SemanticStateEngine (engine/)", () => {
 
   describe("getSnapshot", () => {
     it("returns a snapshot with all required fields", async () => {
-      const wm = makeWorkerManager([vec([1, 0, 0, 0])]);
+      const wm = makeProvider([vec([1, 0, 0, 0])]);
       const engine = new SemanticStateEngine({
         alpha: 0.5,
         driftThreshold: 0.75,
-        workerManager: wm,
+        provider: wm,
       });
       await engine.update("event");
       const snap = engine.getSnapshot();

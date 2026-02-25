@@ -8,6 +8,7 @@
 export { emaFusion, cosineSimilarity, normalize, add, scale } from "./math/vector.js";
 export {
   SemanticStateEngine,
+  type EmbeddingProvider,
   type SemanticStateEngineConfig,
   type Snapshot,
 } from "./engine/SemanticStateEngine.js";
