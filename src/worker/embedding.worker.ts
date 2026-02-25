@@ -56,11 +56,11 @@ export async function handleMessage(event: MessageEvent<EmbeddingRequest>): Prom
   try {
     const extractor = await PipelineSingleton.getInstance(currentModelName);
     const output = await extractor(text, { pooling: 'mean', normalize: true });
-    const response: EmbeddingResponse = { id, vector: output.data as Float32Array };
+    const response: EmbeddingResponse = { type: "EMBED_RES", id, vector: output.data as Float32Array };
     self.postMessage(response);
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    const response: EmbeddingResponse = { id, vector: null, error };
+    const response: EmbeddingResponse = { type: "EMBED_RES", id, vector: null, error };
     self.postMessage(response);
   }
 }
