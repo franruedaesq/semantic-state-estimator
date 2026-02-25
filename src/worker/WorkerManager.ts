@@ -46,7 +46,7 @@ export class WorkerManager {
     modelName: string = "Xenova/all-MiniLM-L6-v2",
   ) {
     const url = workerUrl ?? createBlobWorkerUrl();
-    this.worker = new Worker(url, { type: "module" });
+    this.worker = new Worker(url, { type: "classic" });
 
     this.worker.onerror = (event: ErrorEvent) => {
       console.error(

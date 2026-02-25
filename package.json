@@ -1,6 +1,6 @@
 {
   "name": "semantic-state-estimator",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "A TypeScript library that tracks the implicit semantic intent, emotional state, or 'vibe' of a user/system using local text embeddings and EMA fusion.",
   "type": "module",
   "main": "./dist/index.cjs",

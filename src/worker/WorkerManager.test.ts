@@ -232,9 +232,30 @@ describe("WorkerManager", () => {
 
     expect(createObjectURLSpy).toHaveBeenCalledTimes(1);
     expect(createObjectURLSpy).toHaveBeenCalledWith(expect.any(Blob));
-    expect(MockWorkerClass).toHaveBeenCalledWith(fakeUrl, { type: "module" });
+    expect(MockWorkerClass).toHaveBeenCalledWith(fakeUrl, { type: "classic" });
 
     createObjectURLSpy.mockRestore();
+  });
+
+  it("instantiates Worker with { type: 'classic' } when an explicit URL is provided", () => {
+    // Verifies that the explicit-workerUrl code path also uses 'classic'.
+    // CJS-bundled inlined code has no `require()` when executed inside a module
+    // worker, so 'classic' is required for both Blob and explicit-URL paths.
+    const MockWorkerClass = vi.fn().mockImplementation(() => ({
+      onmessage: null,
+      onerror: null,
+      postMessage: vi.fn(),
+      addEventListener: vi.fn(),
+      terminate: vi.fn(),
+    }));
+    (globalThis as Record<string, unknown>).Worker = MockWorkerClass;
+
+    new WorkerManager("embedding.worker.js");
+
+    expect(MockWorkerClass).toHaveBeenCalledWith(
+      "embedding.worker.js",
+      { type: "classic" },
+    );
   });
 
   it("wires onerror and logs to console.error on worker error", () => {
