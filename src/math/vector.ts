@@ -5,12 +5,12 @@
  * cosine similarity, and EMA (Exponential Moving Average) fusion.
  */
 
+import { DimensionMismatchError, SemanticStateError } from "../errors.js";
+
 /** Asserts that two vectors have the same length, throwing otherwise. */
 function assertSameDimension(a: number[], b: number[]): void {
   if (a.length !== b.length) {
-    throw new Error(
-      `Vector dimension mismatch: a=${a.length}, b=${b.length}`,
-    );
+    throw new DimensionMismatchError(a.length, b.length);
   }
 }
 
@@ -86,7 +86,7 @@ export function emaFusion(
 ): number[] {
   assertSameDimension(current, previous);
   if (alpha <= 0 || alpha > 1) {
-    throw new Error(`Alpha must be in the range (0, 1], got ${alpha}`);
+    throw new SemanticStateError(`Alpha must be in the range (0, 1], got ${alpha}`);
   }
   return current.map((val, i) => alpha * val + (1 - alpha) * previous[i]!);
 }

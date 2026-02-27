@@ -28,6 +28,18 @@ export interface SemanticStateEngineConfig {
    * @param driftScore Drift magnitude: 1 − cosine_similarity ∈ [0, 2].
    */
   onDriftDetected?: (vector: number[], driftScore: number) => void;
+
+  /**
+   * Optional callback invoked after every successful `update`, once the new
+   * EMA state has been fused and listeners have been notified.
+   *
+   * Use this for observability — logging, metrics, or debugging — without
+   * coupling to the React/Zustand subscription model.
+   *
+   * @param snapshot The updated point-in-time snapshot.
+   * @param text     The raw text that triggered the update.
+   */
+  onStateChange?: (snapshot: Snapshot, text: string) => void;
   /**
    * The embedding provider used to obtain embedding vectors asynchronously.
    * Any object implementing `getEmbedding(text: string): Promise<Float32Array | number[]>`
@@ -94,6 +106,7 @@ export class SemanticStateEngine {
     vector: number[],
     driftScore: number,
   ) => void;
+  private readonly onStateChange?: (snapshot: Snapshot, text: string) => void;
   private readonly provider: EmbeddingProvider;
   readonly modelName: string;
 
@@ -102,6 +115,7 @@ export class SemanticStateEngine {
 
   constructor(config: SemanticStateEngineConfig) {
     this.onDriftDetected = config.onDriftDetected;
+    this.onStateChange = config.onStateChange;
     this.provider = config.provider;
     this.modelName = config.modelName ?? "Xenova/all-MiniLM-L6-v2";
     this.wasmEngine = new WasmStateEngine(config.alpha, config.driftThreshold);
@@ -135,6 +149,10 @@ export class SemanticStateEngine {
     }
 
     this.listeners.forEach((l) => l());
+
+    if (this.onStateChange) {
+      this.onStateChange(this.getSnapshot(), text);
+    }
   }
 
   /**
