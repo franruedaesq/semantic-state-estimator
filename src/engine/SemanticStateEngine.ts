@@ -1,4 +1,4 @@
-import { emaFusion, cosineSimilarity } from "../math/vector.js";
+import { WasmStateEngine } from "../wasm-pkg/loader.js";
 
 /**
  * A generic embedding provider contract.
@@ -9,18 +9,6 @@ import { emaFusion, cosineSimilarity } from "../math/vector.js";
 export interface EmbeddingProvider {
   getEmbedding(text: string): Promise<Float32Array | number[]>;
 }
-
-/**
- * Age-based health decay rate: health lost per millisecond of inactivity.
- * At this rate, age alone reduces health to 0 after ~10 seconds of inactivity.
- */
-const AGE_DECAY_RATE = 0.0001;
-
-/**
- * Weight applied to the most-recent drift value when computing healthScore.
- * A drift of 1.0 (orthogonal vectors) reduces health by 0.5.
- */
-const DRIFT_WEIGHT = 0.5;
 
 /**
  * Configuration for the SemanticStateEngine.
@@ -73,17 +61,35 @@ export interface Snapshot {
   semanticSummary: string;
 }
 
+/** Shape of the object returned by `WasmStateEngine.update()`. */
+interface WasmUpdateResult {
+  driftDetected: boolean;
+  driftScore: number;
+  vector: number[];
+}
+
+/** Shape of the object returned by `WasmStateEngine.get_snapshot()`. */
+interface WasmSnapshot {
+  vector: number[];
+  healthScore: number;
+  timestamp: number;
+  semanticSummary: string;
+}
+
 /**
  * SemanticStateEngine tracks the implicit semantic intent of an event stream
  * using Exponential Moving Average (EMA) vector fusion.
+ *
+ * The computationally intensive vector operations (cosine similarity, EMA
+ * fusion, health calculation) are delegated to a Rust/WebAssembly core
+ * (`WasmStateEngine`) for better performance and type safety, while the
+ * public API surface remains identical.
  *
  * It fires an optional drift callback when incoming embeddings diverge
  * significantly from the current state, and exposes a healthScore that
  * degrades with both age and volatility.
  */
 export class SemanticStateEngine {
-  private readonly alpha: number;
-  private readonly driftThreshold: number;
   private readonly onDriftDetected?: (
     vector: number[],
     driftScore: number,
@@ -91,28 +97,19 @@ export class SemanticStateEngine {
   private readonly provider: EmbeddingProvider;
   readonly modelName: string;
 
-  private stateVector: number[];
-  private lastUpdatedAt: number;
-  private lastDrift: number;
-  private updateCount: number;
+  private readonly wasmEngine: WasmStateEngine;
   private readonly listeners = new Set<() => void>();
 
   constructor(config: SemanticStateEngineConfig) {
-    this.alpha = config.alpha;
-    this.driftThreshold = config.driftThreshold;
     this.onDriftDetected = config.onDriftDetected;
     this.provider = config.provider;
     this.modelName = config.modelName ?? "Xenova/all-MiniLM-L6-v2";
-
-    this.stateVector = [];
-    this.lastUpdatedAt = Date.now();
-    this.lastDrift = 0;
-    this.updateCount = 0;
+    this.wasmEngine = new WasmStateEngine(config.alpha, config.driftThreshold);
   }
 
   /**
-   * Obtains an embedding for `text` from the WorkerManager and fuses it into
-   * the rolling semantic state using EMA.
+   * Obtains an embedding for `text` from the provider and fuses it into
+   * the rolling semantic state using EMA (computed in Rust/WASM).
    *
    * On the first call the embedding establishes the baseline.
    * On subsequent calls, if the cosine similarity between the current state
@@ -127,33 +124,16 @@ export class SemanticStateEngine {
     if (raw === null) {
       return;
     }
-    const embedding = Array.from(raw);
+    const embedding = Float32Array.from(raw);
+    const result = this.wasmEngine.update(
+      embedding,
+      Date.now(),
+    ) as WasmUpdateResult;
 
-    if (this.updateCount === 0) {
-      // First call: establish baseline from a zero-vector origin.
-      const zero = new Array(embedding.length).fill(0) as number[];
-      this.stateVector = emaFusion(embedding, zero, this.alpha);
-      this.lastDrift = 0;
-    } else {
-      if (embedding.length !== this.stateVector.length) {
-        throw new Error(
-          `Embedding dimension mismatch: expected ${this.stateVector.length}, got ${embedding.length}`,
-        );
-      }
-
-      const similarity = cosineSimilarity(this.stateVector, embedding);
-      const drift = 1 - similarity;
-
-      if (similarity < this.driftThreshold) {
-        this.onDriftDetected?.(embedding, drift);
-      }
-
-      this.stateVector = emaFusion(embedding, this.stateVector, this.alpha);
-      this.lastDrift = drift;
+    if (result.driftDetected) {
+      this.onDriftDetected?.(Array.from(result.vector), result.driftScore);
     }
 
-    this.lastUpdatedAt = Date.now();
-    this.updateCount++;
     this.listeners.forEach((l) => l());
   }
 
@@ -170,34 +150,12 @@ export class SemanticStateEngine {
    * Returns a point-in-time snapshot of the current semantic state.
    */
   getSnapshot(): Snapshot {
-    const healthScore = this.calculateHealth();
+    const snap = this.wasmEngine.get_snapshot(Date.now()) as WasmSnapshot;
     return {
-      vector: [...this.stateVector],
-      healthScore,
-      timestamp: this.lastUpdatedAt,
-      semanticSummary: this.buildSummary(healthScore),
+      vector: Array.from(snap.vector),
+      healthScore: snap.healthScore,
+      timestamp: snap.timestamp,
+      semanticSummary: snap.semanticSummary,
     };
-  }
-
-  /**
-   * Computes the current healthScore.
-   *
-   * Starts at 1.0 and subtracts:
-   * - An age penalty proportional to milliseconds elapsed since the last update.
-   * - A drift penalty proportional to the most recent drift magnitude.
-   *
-   * The result is clamped to [0, 1].
-   */
-  private calculateHealth(): number {
-    const timeSinceUpdate = Date.now() - this.lastUpdatedAt;
-    const agePenalty = timeSinceUpdate * AGE_DECAY_RATE;
-    const driftPenalty = this.lastDrift * DRIFT_WEIGHT;
-    return Math.max(0, Math.min(1, 1.0 - agePenalty - driftPenalty));
-  }
-
-  private buildSummary(healthScore: number): string {
-    if (healthScore > 0.8) return "stable";
-    if (healthScore > 0.5) return "drifting";
-    return "volatile";
   }
 }
