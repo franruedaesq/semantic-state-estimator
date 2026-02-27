@@ -13,3 +13,8 @@ export {
   type Snapshot,
 } from "./engine/SemanticStateEngine.js";
 export { WorkerManager } from "./worker/WorkerManager.js";
+export {
+  SemanticStateError,
+  DimensionMismatchError,
+  EmbeddingProviderError,
+} from "./errors.js";

@@ -70,7 +70,8 @@
     "jsdom": "^26.1.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.2",
-    "vitest": "^3.0.8"
+    "vitest": "^3.0.8",
+    "zustand": "^5.0.11"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1"
