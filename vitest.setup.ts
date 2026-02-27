@@ -4,6 +4,16 @@
  * Adds the minimal browser globals required to test WebWorker-related code
  * inside the Node.js environment that Vitest uses.
  */
+import { webcrypto } from "node:crypto";
+
+// Polyfill crypto for Node < 19 environments (e.g. Node 18) where globalThis.crypto
+// might not be fully available or bound in the jsdom environment.
+if (!globalThis.crypto) {
+  Object.defineProperty(globalThis, "crypto", {
+    value: webcrypto,
+    writable: true,
+  });
+}
 
 // Make `self` point to globalThis so worker code that calls `self.postMessage`
 // or `self.addEventListener` resolves to the mocked globals below.
