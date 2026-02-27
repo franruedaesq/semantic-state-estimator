@@ -16,28 +16,56 @@ The following core features have been moved to the Rust `WasmStateEngine`:
 
 ## Testing Strategy
 
-To guarantee that users can upgrade without any code changes, we employ a multi-layered testing strategy:
+To guarantee that users can upgrade without any code changes, we employ a multi-layered testing strategy. The specific tests required are detailed below.
 
 ### 1. Regression Testing (Existing Suite)
-We run the existing Vitest suite (`npm test`) to ensure that all public contracts remain satisfied. This includes:
-*   `SemanticStateEngine` API methods (`update`, `getSnapshot`, `subscribe`).
-*   `WorkerManager` communication and error handling.
-*   React hooks and Zustand middleware integration.
+We must run the existing Vitest suite (`npm test`) to ensure that all public contracts remain satisfied. This includes verifying:
+*   `SemanticStateEngine` API methods (`update`, `getSnapshot`, `subscribe`) behave exactly as documented.
+*   `WorkerManager` correctly handles async communication and error propagation.
+*   React hooks and Zustand middleware integration points function without modification.
 
-### 2. Shadow / Parity Testing (New)
-This is the primary mechanism for verifying behavioral correctness. We implement a **Shadow Engine**—a pure TypeScript reimplementation of the core logic (effectively the "old" version logic)—and run it side-by-side with the new WASM engine.
+### 2. Shadow / Parity Testing (New - To Be Implemented)
+This is the primary mechanism for verifying behavioral correctness. A **Shadow Engine**—a pure TypeScript reimplementation of the core logic (effectively the "old" version logic)—should be run side-by-side with the new WASM engine.
 
-**The "Golden Master" Approach:**
-*   **Setup**: Instantiate both `SemanticStateEngine` (WASM) and `ShadowStateEngine` (TS) with identical configuration (`alpha`, `driftThreshold`).
-*   **Execution**: Feed identical random embedding vectors (Fuzzing) to both engines in a loop.
-*   **Verification**: After *every* update, compare the internal state:
-    *   **State Vector**: Must match element-wise (within floating-point tolerance).
-    *   **Health Score**: Must be identical.
-    *   **Drift Detection**: Both must fire `onDriftDetected` at the same step with the same score.
-    *   **Semantic Summary**: Must be identical.
+**Required Scenarios:**
 
-### 3. Fuzz Testing
-We generate random vectors (unit length, zero vectors, orthogonal vectors) to test edge cases and ensure the WASM implementation handles numerical stability (NaNs, Infinity) as gracefully as the TypeScript version.
+*   **Initialization Parity**:
+    *   Verify that both engines start with identical state vectors (typically zeros).
+    *   Verify that both engines report an initial health score of 1.0.
+    *   Verify that both engines produce identical initial snapshots.
+
+*   **Steady State Evolution**:
+    *   Feed a sequence of consistent (high similarity) embeddings to both engines.
+    *   Verify that the state vector evolves identically after each update.
+    *   Verify that the health score degrades identically due to time decay (mocking time is essential here).
+
+*   **Drift Event Detection**:
+    *   Inject a high-drift embedding (low cosine similarity).
+    *   Verify that *both* engines fire `onDriftDetected` at the exact same step.
+    *   Verify that the reported `driftScore` is identical (within floating-point tolerance).
+
+*   **Recovery Phase**:
+    *   After a drift event, return to consistent embeddings.
+    *   Verify that the health score recovers at the same rate for both engines.
+
+### 3. Fuzz Testing (New - To Be Implemented)
+We must generate random vectors and edge-case inputs to ensure the WASM implementation handles numerical stability as gracefully as the TypeScript version.
+
+**Specific Edge Cases:**
+*   **Input Handling**: Test with empty strings, very long strings (token limit boundaries), and special characters (Unicode/Emoji).
+*   **Vector Math**:
+    *   **Zero Vectors**: Ensure division-by-zero protection in normalization/cosine similarity.
+    *   **Orthogonal Vectors**: Ensure cosine similarity correctly reports 0.0.
+    *   **Collinear Vectors**: Ensure cosine similarity correctly reports 1.0 (or -1.0).
+    *   **Tiny/Huge Magnitudes**: Ensure no overflow/underflow issues in dot product calculations.
+
+### 4. Performance Testing (Optional but Recommended)
+*   **Execution Time**: Benchmark the `update()` method execution time for WASM vs TS implementation. Expectation: WASM should be faster or comparable.
+*   **Memory Usage**: Monitor heap allocation during long-running sessions to ensure no memory leaks in the WASM linear memory.
+
+### 5. Browser Compatibility
+*   **WASM Loading**: Verify that the WASM module loads correctly in all target browsers (Chrome, Firefox, Safari, Edge).
+*   **Fallback**: While not strictly required if we target modern browsers, verify behavior/error messages if WASM is not supported.
 
 ## Goal
 
